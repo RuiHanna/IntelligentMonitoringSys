@@ -45,7 +45,7 @@ const handleLogin = async () => {
         const {token} = response.data
         localStorage.setItem('token', token)
         ElMessage.success('登录成功')
-        router.push('/upload')
+        await router.push('/upload')
     } catch (error) {
         ElMessage.error(error.response?.data?.message || '登录失败')
     } finally {

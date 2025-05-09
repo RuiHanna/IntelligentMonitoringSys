@@ -32,6 +32,7 @@ def login():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
+    print(username, password)
 
     user = User.query.filter_by(username=username, password=password).first()
     if user:
