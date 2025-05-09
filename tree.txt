@@ -1,0 +1,16 @@
+©À©¤backend
+©¸©¤frontend
+   ©À©¤node_modules
+   ©À©¤public
+   ©¸©¤src
+       ©À©¤assets
+       ©À©¤components
+       ©À©¤router
+       ©¦    ©¸©¤index.js
+       ©¸©¤views
+            ©À©¤HistoryPage.vue
+            ©À©¤LiveMonitor.vue
+            ©À©¤LgoinPage.vue
+            ©À©¤SettingsPage.vue
+            ©¸©¤UpLoad.vue
+
