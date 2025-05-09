@@ -1,22 +1,55 @@
 import {createRouter, createWebHistory} from 'vue-router'
-import LoginPage from "@/views/LoginPage.vue";
-import UpLoad from "@/views/UpLoad.vue";
-import LiveMonitor from "@/views/LiveMonitor.vue";
-import HistoryPage from "@/views/HistoryPage.vue";
-import SettingsPage from "@/views/SettingsPage.vue";
 
 const routes = [
-    {path: '/', redirect: '/login',},
-    {path: '/login', component: LoginPage},
-    {path: '/upload',component: UpLoad},
-    {path: '/live',component: LiveMonitor},
-    {path: '/history',component: HistoryPage},
-    {path: '/settings',component: SettingsPage},
+    {
+        path: '/',
+        redirect: '/upload',
+        meta: {requiresAuth: true}
+    },
+    {
+        path: '/login',
+        name: 'Login',
+        component: () => import('../views/LoginPage.vue')
+    },
+    {
+        path: '/upload',
+        name: 'Upload',
+        component: () => import('../views/UpLoad.vue'),
+        meta: {requiresAuth: true}
+    },
+    {
+        path: '/live',
+        name: 'LiveMonitor',
+        component: () => import('../views/LiveMonitor.vue'),
+        meta: {requiresAuth: true}
+    },
+    {
+        path: '/history',
+        name: 'History',
+        component: () => import('../views/HistoryPage.vue'),
+        meta: {requiresAuth: true}
+    },
+    {
+        path: '/settings',
+        name: 'Settings',
+        component: () => import('../views/SettingsPage.vue'),
+        meta: {requiresAuth: true}
+    }
 ]
 
 const router = createRouter({
     history: createWebHistory(),
     routes
+})
+
+// 路由守卫
+router.beforeEach((to, from, next) => {
+    const isAuthenticated = localStorage.getItem('token')
+    if (to.meta.requiresAuth && !isAuthenticated) {
+        next('/login')
+    } else {
+        next()
+    }
 })
 
 export default router
