@@ -1,119 +1,137 @@
-from flask import Flask, request, jsonify
+# backend/app.py
+from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS
-import os
-from datetime import datetime
-import uuid
-import threading
-from models.db import db, init_db
-from models.task import Task
-from models.alert import Alert
-from utils.video_processor import process_video
-from utils.tracker import DeepSORTTracker
+import pymysql
+import os, datetime, threading
+from ultralytics import YOLO
+from deep_sort_realtime.deepsort_tracker import DeepSort
+import cv2
 
 app = Flask(__name__)
 CORS(app)
 
-# 配置
-app.config.from_pyfile('config.py')
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# MySQL 配置（使用 PyMySQL）
+DB_CONFIG = {
+    'host': 'localhost',
+    'user': 'root',
+    'password': 'password',  # 替换为真实密码
+    'database': 'monitor_db',
+    'cursorclass': pymysql.cursors.DictCursor
+}
 
-# 初始化数据库
-init_db(app)
+
+def get_db_connection():
+    return pymysql.connect(**DB_CONFIG)
 
 
-@app.route('/api/upload', methods=['POST'])
+@app.route('/upload', methods=['POST'])
 def upload_video():
-    """处理视频上传"""
-    if 'video' not in request.files:
-        return jsonify({'error': 'No video file'}), 400
-
-    file = request.files['video']
-    if file.filename == '':
-        return jsonify({'error': 'Empty filename'}), 400
-
-    # 生成唯一文件名
-    ext = file.filename.split('.')[-1]
-    filename = f"{uuid.uuid4()}.{ext}"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
-
-    # 创建数据库任务记录
-    task_id = str(uuid.uuid4())
-    new_task = Task(
-        id=task_id,
-        filename=filename,
-        status='queued'
-    )
-    db.session.add(new_task)
-    db.session.commit()
-
-    # 启动后台处理
-    thread = threading.Thread(
-        target=process_video_task,
-        args=(task_id, filepath)
-    )
-    thread.start()
-
-    return jsonify(new_task.to_dict())
+    file = request.files['file']
+    filename = file.filename
+    save_path = os.path.join('uploads', filename)
+    file.save(save_path)
+    log('INFO', f'视频上传: {filename}')
+    return jsonify({"message": "视频上传成功"})
 
 
-def process_video_task(task_id, filepath):
-    """后台视频处理任务"""
-    with app.app_context():
-        task = Task.query.get(task_id)
-        try:
-            task.status = 'processing'
-            db.session.commit()
-
-            # 初始化跟踪器
-            tracker = DeepSORTTracker(
-                model_path='models/yolov8n.pt',
-                max_age=30
-            )
-
-            # 处理视频
-            results = process_video(filepath, tracker)
-
-            # 更新任务状态
-            task.status = 'completed'
-            task.completed_at = datetime.utcnow()
-            task.object_count = len(results['tracks'])
-            task.processing_time = results['processing_time']
-            db.session.commit()
-
-            # 生成报警
-            generate_alerts(task_id, results['tracks'])
-
-        except Exception as e:
-            task.status = 'failed'
-            task.error = str(e)
-            db.session.commit()
+@app.route('/api/settings', methods=['GET', 'POST'])
+def settings():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    if request.method == 'GET':
+        cur.execute("SELECT * FROM system_settings WHERE id=1")
+        result = cur.fetchone()
+        conn.close()
+        return jsonify(result)
+    else:
+        data = request.json
+        cur.execute("""
+            UPDATE system_settings
+            SET retain_days=%s, max_targets=%s, detection_thresh=%s
+            WHERE id=1
+        """, (data['retain_days'], data['max_targets'], data['detection_thresh']))
+        conn.commit()
+        log('INFO', '系统设置已更新')
+        conn.close()
+        return jsonify({"status": "success"})
 
 
-@app.route('/api/tasks', methods=['GET'])
-def get_all_tasks():
-    """获取所有任务"""
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 10, type=int)
+@app.route('/api/logs')
+def get_logs():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM system_logs ORDER BY log_time DESC LIMIT 100")
+    logs = cur.fetchall()
+    conn.close()
+    return jsonify(logs)
 
-    tasks = Task.query.order_by(Task.created_at.desc()).paginate(
-        page=page, per_page=per_page, error_out=False)
 
+@app.route('/api/targets')
+def get_targets():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM target_summary ORDER BY id DESC LIMIT 100")
+    targets = cur.fetchall()
+    conn.close()
+    return jsonify(targets)
+
+
+@app.route('/api/heatmap')
+def heatmap_data():
     return jsonify({
-        'items': [task.to_dict() for task in tasks.items],
-        'total': tasks.total,
-        'pages': tasks.pages,
-        'current_page': tasks.page
+        "tooltip": {},
+        "grid": {"height": "50%", "top": "10%"},
+        "xAxis": {
+            "type": "category",
+            "data": ["0", "1", "2", "3", "4", "5"],  # 示例 x 坐标
+            "splitArea": {"show": True}
+        },
+        "yAxis": {
+            "type": "category",
+            "data": ["A", "B", "C", "D"],  # 示例 y 坐标
+            "splitArea": {"show": True}
+        },
+        "visualMap": {
+            "min": 0,
+            "max": 10,
+            "calculable": True,
+            "orient": "horizontal",
+            "left": "center",
+            "bottom": "15%"
+        },
+        "series": [{
+            "name": "热力图",
+            "type": "heatmap",
+            "data": [
+                [0, 0, 5], [1, 0, 1], [2, 0, 0],
+                [0, 1, 7], [1, 1, 3], [2, 1, 6]
+            ],
+            "label": {"show": True},
+            "emphasis": {"itemStyle": {"shadowBlur": 10, "shadowColor": "rgba(0, 0, 0, 0.5)"}}
+        }]
     })
 
 
-@app.route('/api/tasks/<task_id>', methods=['GET'])
-def get_task(task_id):
-    """获取单个任务详情"""
-    task = Task.query.get_or_404(task_id)
-    return jsonify(task.to_dict())
+
+@app.route('/api/stats')
+def bar_data():
+    return jsonify({
+        "xAxis": {"type": "category", "data": ["person", "car"]},
+        "yAxis": {"type": "value"},
+        "series": [{"data": [20, 5], "type": "bar"}]
+    })
+
+
+def log(level, msg):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO system_logs (log_time, level, message) VALUES (%s, %s, %s)",
+        (datetime.datetime.now(), level, msg))
+    conn.commit()
+    conn.close()
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    os.makedirs('uploads', exist_ok=True)
+    app.run(debug=True)
