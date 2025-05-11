@@ -25,14 +25,16 @@
 </template>
 
 <script setup>
-// import {useRoute} from 'vue-router'
-//
-// const route = useRoute()
 </script>
 
-<style scoped>
+<style>
 .el-header {
     line-height: 60px;
     font-size: 20px;
+}
+
+body {
+    margin: 0;
+    padding: 0;
 }
 </style>
