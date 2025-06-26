@@ -1,21 +1,26 @@
 <template>
     <div>
-        <el-button @click="startRealtime">启动摄像头</el-button>
-        <video ref="videoRef" autoplay playsinline style="max-width: 100%; margin-top: 20px;"></video>
+        <el-button @click="startRealtime" :disabled="isTracking">启动摄像头</el-button>
+        <el-button @click="stopRealtime" :disabled="!isTracking">关闭摄像头</el-button>
+        <div v-if="isTracking" style="margin-top: 20px;">
+            <img :src="streamUrl" style="max-width: 100%;" />
+        </div>
     </div>
 </template>
 
 <script setup>
-import {ref} from 'vue';
+import { ref } from 'vue';
 
-const videoRef = ref(null);
+const streamUrl = ref('');
+const isTracking = ref(false);
 
-const startRealtime = async () => {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({video: true});
-        videoRef.value.srcObject = stream;
-    } catch (err) {
-        console.error('摄像头访问失败', err);
-    }
+const startRealtime = () => {
+    streamUrl.value = 'http://localhost:5000/realtime-stream';
+    isTracking.value = true;
+};
+
+const stopRealtime = () => {
+    streamUrl.value = '';
+    isTracking.value = false;
 };
 </script>

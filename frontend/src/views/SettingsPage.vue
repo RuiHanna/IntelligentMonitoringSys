@@ -27,17 +27,27 @@
 <script setup>
 import {onMounted, ref} from 'vue';
 import axios from 'axios';
+import {ElMessage} from 'element-plus';
 
 const settings = ref({retain_days: 7, max_targets: 20, detection_thresh: 0.5});
 const logs = ref([]);
 
-onMounted(async () => {
+const loadData = async () => {
     const res = await axios.get('http://localhost:5000/api/settings');
     settings.value = res.data;
     logs.value = (await axios.get('http://localhost:5000/api/logs')).data;
-});
+};
+
+onMounted(loadData);
 
 const saveSettings = async () => {
-    await axios.post('http://localhost:5000/api/settings', settings.value);
+    try {
+        await axios.post('http://localhost:5000/api/settings', settings.value);
+        ElMessage.success('设置保存成功');
+        await loadData();  // ✅ 重新加载设置和日志
+    } catch (error) {
+        ElMessage.error('保存失败，请重试');
+    }
 };
 </script>
+

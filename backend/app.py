@@ -1,9 +1,9 @@
 # backend/app.py
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS
 import pymysql
 import os, datetime
-from detector import process_video
+from detector import process_video, generate_tracking_stream
 
 app = Flask(__name__)
 CORS(app)
@@ -227,6 +227,25 @@ def list_output_videos():
     output_dir = 'output'
     videos = [f for f in os.listdir(output_dir) if f.endswith('.mp4')]
     return jsonify(videos)
+
+
+@app.route('/realtime-stream')
+def realtime_stream():
+    conn = pymysql.connect(host='localhost', user='root', password='password', database='monitor_db')
+    cur = conn.cursor()
+    cur.execute("SELECT detection_thresh, max_targets FROM system_settings WHERE id=1")
+    row = cur.fetchone()
+    conn.close()
+
+    detection_thresh, max_targets = row or (0.5, 20)
+    detection_thresh = float(detection_thresh)
+    max_targets = int(max_targets)
+
+    return Response(
+        generate_tracking_stream(detection_thresh, max_targets),
+        mimetype='multipart/x-mixed-replace; boundary=frame'
+    )
+
 
 
 if __name__ == '__main__':

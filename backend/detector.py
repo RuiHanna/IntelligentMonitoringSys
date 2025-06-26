@@ -62,6 +62,42 @@ def process_video(path, detection_thresh=0.5, max_targets=20):
     return tracked_results
 
 
+def generate_tracking_stream(detection_thresh=0.5, max_targets=20):
+    tracker = DeepSort(max_age=30, max_iou_distance=0.7, n_init=3)
+    cap = cv2.VideoCapture(0)
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        detections = []
+        yolo_results = model(frame)[0]
+        for r in yolo_results.boxes.data.tolist():
+            x1, y1, x2, y2, score, cls_id = r
+            if score >= detection_thresh:
+                detections.append(([x1, y1, x2 - x1, y2 - y1], score, int(cls_id)))
+
+        tracks = tracker.update_tracks(detections, frame=frame)
+        timestamp = time.time()
+
+        for track in tracks:
+            if not track.is_confirmed():
+                continue
+            track_id = track.track_id
+            l, t, r, b = track.to_ltrb()
+            cv2.rectangle(frame, (int(l), int(t)), (int(r), int(b)), (0, 255, 0), 2)
+            cv2.putText(frame, f'ID:{track_id}', (int(l), int(t) - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+        # 编码为 JPEG 并 yield
+        _, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+    cap.release()
+
+
 def is_browser_friendly(video_path):
     cap = cv2.VideoCapture(video_path)
     codec = int(cap.get(cv2.CAP_PROP_FOURCC))
